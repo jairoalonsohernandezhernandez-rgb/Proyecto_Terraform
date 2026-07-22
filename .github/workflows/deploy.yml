@@ -1,0 +1,47 @@
+name : Deploy Cloud Infraestructure & Container
+
+on:
+  push:
+    branches:
+      - main
+  
+
+jobs:
+  deploy:
+     name: Deploy to GCP
+     runs-on: ubuntu-latest
+
+     steps:
+        - name: Checkout del Código
+          uses: actions/checkout@v4
+
+        - name: Autenticar en GCP
+          uses: google-github-actions/auth@v2
+          with:
+              credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+        - name: Configurar Google Cloud SDK
+          uses: google-github-actions/setup-gcloud@v2
+          
+        - name: Configurar Terraform
+          uses: hashicorp/setup-terraform@v3
+          with:
+              terraform_version: 1.6.0
+
+        - name: Terraform Init & Apply
+          run: |
+              cd terraform
+              terraform init
+              terraform apply -auto-approve \
+                -var="gcp_project_id=${{ secrets.GCP_PROJECT_ID }}" \
+                -var="bucket_name=${{ secrets.GCP_BUCKET_NAME }}"
+
+        - name: Configurar Docker para Artifact Registry
+          run: |
+              gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+        - name: Construir y Subir Imagen Docker
+          run: |
+              IMAGE_TAG="us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloud-log-archiver-repo/log-archiver:latest"
+              dicker build -t $IMAGE_TAG ./src
+              docker push $IMAGE_TAG
