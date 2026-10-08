@@ -1,47 +1,67 @@
-name : Deploy Cloud Infraestructure & Container
+name: "Monorepo CI/CD Pipeline"
 
 on:
   push:
     branches:
       - main
-  
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  deploy:
-     name: Deploy to GCP
-     runs-on: ubuntu-latest
+  validate-app:
+    name: "Build & Test Application"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-     steps:
-        - name: Checkout del Código
-          uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-        - name: Autenticar en GCP
-          uses: google-github-actions/auth@v2
-          with:
-              credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Syntax Check Node.js Code
+        run: node --check src/app.js
 
-        - name: Configurar Google Cloud SDK
-          uses: google-github-actions/setup-gcloud@v2
-          
-        - name: Configurar Terraform
-          uses: hashicorp/setup-terraform@v3
-          with:
-              terraform_version: 1.6.0
+      - name: Test Docker Build
+        run: docker build -t portfolio-backend:ci .
 
-        - name: Terraform Init & Apply
-          run: |
-              cd terraform
-              terraform init
-              terraform apply -auto-approve \
-                -var="gcp_project_id=${{ secrets.GCP_PROJECT_ID }}" \
-                -var="bucket_name=${{ secrets.GCP_BUCKET_NAME }}"
+  validate-k8s:
+    name: "Validate Kubernetes Manifests"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-        - name: Configurar Docker para Artifact Registry
-          run: |
-              gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
 
-        - name: Construir y Subir Imagen Docker
-          run: |
-              IMAGE_TAG="us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloud-log-archiver-repo/log-archiver:latest"
-              dicker build -t $IMAGE_TAG ./src
-              docker push $IMAGE_TAG
+      - name: Dry-run Validate Manifests
+        run: |
+          kubectl apply --dry-run=client -f k8s/namespace.yaml
+          kubectl apply --dry-run=client -f k8s/serviceaccount.yaml
+          kubectl apply --dry-run=client -f k8s/deployment.yaml
+          kubectl apply --dry-run=client -f k8s/service.yaml
+          kubectl apply --dry-run=client -f k8s/ingress.yaml
+
+  validate-terraform:
+    name: "Validate Terraform Modules"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Terraform Init & Validate
+        run: |
+          cd terraform/environments/dev
+          terraform init -backend=false
+          terraform validate
