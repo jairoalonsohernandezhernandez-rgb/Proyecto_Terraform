@@ -7,23 +7,24 @@ metadata:
     app: portfolio-backend
 spec:
   replicas: 2
-  selector: 
-    matchLabels: 
+  selector:
+    matchLabels:
       app: portfolio-backend
   template:
-    metadata: 
-      labels: 
+    metadata:
+      labels:
         app: portfolio-backend
-    spec: 
+    spec:
       serviceAccountName: portafolio-sa
-      containers: 
+      containers:
       - name: app
-        image: nginx:alpine
+        image: portfolio-backend:v1.0.0
+        imagePullPolicy: Never
         ports:
-        - containerPort: 80
+        - containerPort: 8080
         env:
         - name: PORT
-          value: "80" 
+          value: "8080"
         - name: GCP_PROJECT_ID
           value: "portfolio-dev-local"
         resources:
@@ -33,15 +34,15 @@ spec:
           limits:
             cpu: "500m"
             memory: "512Mi"
-        livenessProbe: 
-          httpGet: 
-            path: /
-            port: 80
-          initialDelaySeconds: 10
-          periodSeconds: 10
-        readinessProbe: 
+        livenessProbe:
           httpGet:
-            path: /
-            port: 80
+            path: /health
+            port: 8080
           initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 3
           periodSeconds: 5
